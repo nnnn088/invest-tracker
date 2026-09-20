@@ -21,11 +21,27 @@ export async function renderPng(node: HTMLElement): Promise<string> {
   return toPng(node, opts)
 }
 
+/** iPhone / iPad（含请求桌面版网站的 iPadOS）：主屏幕模式下普通下载链接不可靠 */
+export const isIOS = () =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+/** 触发浏览器下载 */
+export function downloadBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
 export async function dataUrlToBlob(url: string): Promise<Blob> {
   return (await fetch(url)).blob()
 }
 
-/** 优先调用系统分享面板（带文件）；不支持时返回 'unsupported'，由界面降级为全屏图片 */
+/** 调用系统分享面板（带文件）；不支持时返回 'unsupported'，由界面给出提示 */
 export async function shareImageFile(blob: Blob, name: string, title: string): Promise<'shared' | 'cancelled' | 'unsupported'> {
   const file = new File([blob], name, { type: 'image/png' })
   if (typeof navigator.canShare !== 'function' || !navigator.canShare({ files: [file] })) return 'unsupported'

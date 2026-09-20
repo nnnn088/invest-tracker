@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { format } from 'date-fns'
-import { Download, X } from 'lucide-react'
+import { Download, Share2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DEFAULT_REPORT_OPTIONS, ShareReport, type ReportOptions } from '@/components/share/ShareReport'
 import { useCapitalFlows, useEntries, usePlatforms, useSnapshots } from '@/data/hooks'
-import { useI18n } from '@/i18n'
+import { fmt, useI18n } from '@/i18n'
 import { buildReport } from '@/lib/report'
 import type { Range } from '@/lib/range'
-import { dataUrlToBlob, renderPng, shareImageFile } from '@/lib/shareImage'
+import { dataUrlToBlob, downloadBlob, isIOS, renderPng, shareImageFile } from '@/lib/shareImage'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/settings'
 
@@ -42,7 +42,7 @@ function Check({
   )
 }
 
-/** 生成分享图：先勾选内容，再渲染成 PNG 预览，最后分享/保存 */
+/** 生成分享图：先勾选内容，再渲染成 PNG 预览，最后“保存”或“分享” */
 export function ShareDialog({ range, onClose }: { range: Range; onClose: () => void }) {
   const { t } = useI18n()
   const { baseCurrency } = useSettings()
@@ -57,6 +57,7 @@ export function ShareDialog({ range, onClose }: { range: Range; onClose: () => v
   const [png, setPng] = useState<{ url: string; blob: Blob; name: string } | null>(null)
   const [error, setError] = useState('')
   const [fallback, setFallback] = useState(false)
+  const [notice, setNotice] = useState('')
   const stageRef = useRef<HTMLDivElement>(null)
   const runId = useRef(0)
 
@@ -99,15 +100,30 @@ export function ShareDialog({ range, onClose }: { range: Range; onClose: () => v
 
   function generate() {
     setError('')
+    setNotice('')
     setChartReady(false)
     setPng(null)
     setStage('rendering')
   }
 
+  /** 分享：调用系统分享面板发给别人；设备不支持时提示改用“保存” */
   async function share() {
     if (!png) return
+    setNotice('')
     const result = await shareImageFile(png.blob, png.name, t.share.report.title)
-    if (result === 'unsupported') setFallback(true)
+    if (result === 'unsupported') setNotice(t.share.unsupported)
+  }
+
+  /** 保存：iPhone 上全屏显示图片、长按存到相册（主屏幕模式下普通下载不可靠）；其他设备直接下载 */
+  function save() {
+    if (!png) return
+    setNotice('')
+    if (isIOS()) {
+      setFallback(true)
+      return
+    }
+    downloadBlob(png.blob, png.name)
+    setNotice(fmt(t.share.saved, { name: png.name }))
   }
 
   return (
@@ -122,7 +138,7 @@ export function ShareDialog({ range, onClose }: { range: Range; onClose: () => v
           {!data ? (
             <p className="py-6 text-center text-sm text-muted-foreground">{t.share.noData}</p>
           ) : stage === 'preview' && png ? (
-            <div className="max-h-[58dvh] overflow-y-auto rounded-lg border bg-muted/40 p-2">
+            <div className="max-h-[46dvh] overflow-y-auto rounded-lg border bg-muted/40 p-2">
               <img src={png.url} alt={t.share.report.title} className="w-full rounded-md" />
             </div>
           ) : (
@@ -146,12 +162,29 @@ export function ShareDialog({ range, onClose }: { range: Range; onClose: () => v
             </div>
           )}
 
+          {stage === 'preview' && notice && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+
           <DialogFooter>
             {stage === 'preview' ? (
-              <>
-                <Button variant="outline" onClick={() => setStage('options')}>{t.share.back}</Button>
-                <Button onClick={share}>{t.share.shareSave}</Button>
-              </>
+              // “保存”和“分享”并排一行，“返回修改”在下面，小屏幕上也不会被挤出弹窗
+              <div className="grid w-full grid-cols-2 gap-2">
+                <Button variant="outline" onClick={save}>
+                  <Download /> {t.share.save}
+                </Button>
+                <Button onClick={share}>
+                  <Share2 /> {t.share.shareAction}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="col-span-2"
+                  onClick={() => {
+                    setNotice('')
+                    setStage('options')
+                  }}
+                >
+                  {t.share.back}
+                </Button>
+              </div>
             ) : (
               <>
                 <Button variant="outline" onClick={onClose}>{t.share.close}</Button>

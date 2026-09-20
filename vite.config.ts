@@ -18,8 +18,9 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['icons/icon.svg'],
       manifest: {
-        name: '投资资产统计',
-        short_name: '资产统计',
+        // 安装到主屏幕后显示的名字
+        name: 'InvTracker',
+        short_name: 'InvTracker',
         description: '个人投资资产统计，数据仅保存在本机',
         lang: 'zh-CN',
         start_url: base,
